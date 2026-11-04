@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>⚓ Batalha Naval - Times</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- TELA DE ENTRADA -->
+  <div id="join-screen" class="screen active">
+    <div class="join-box">
+      <h1>⚓ BATALHA NAVAL</h1>
+      <h2>Batalha em Times</h2>
+      <input type="text" id="player-name" placeholder="Seu nome" maxlength="20">
+      <div class="color-picker">
+        <label>Cor do avatar:</label>
+        <input type="color" id="player-color" value="#4a9eff">
+      </div>
+      <div class="join-buttons">
+        <button class="btn btn-primary" onclick="joinGame(false)">🎮 Jogar</button>
+        <button class="btn btn-secondary" onclick="joinGame(true)">👁️ Espectar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOBBY -->
+  <div id="lobby-screen" class="screen">
+    <div class="lobby-container">
+      <h1>⚓ BATALHA NAVAL</h1>
+      <div id="admin-panel" class="admin-panel" style="display:none">
+        <h3>⚙️ Configurações (ADM)</h3>
+        <div class="config-row">
+          <label>Distribuição dos times:</label>
+          <select id="cfg-random" onchange="adminConfig()">
+            <option value="false">Jogadores escolhem</option>
+            <option value="true">Aleatória</option>
+          </select>
+        </div>
+        <div class="config-row">
+          <label>Duração:</label>
+          <select id="cfg-duration" onchange="adminConfig()">
+            <option value="10">10 min</option>
+            <option value="20" selected>20 min</option>
+            <option value="30">30 min</option>
+            <option value="45">45 min</option>
+            <option value="60">1 hora</option>
+          </select>
+        </div>
+        <button class="btn btn-success btn-big" onclick="startGame()">▶ INICIAR BATALHA</button>
+      </div>
+
+      <div class="teams-display">
+        <div class="team-box team-blue">
+          <h3>🔵 TIME AZUL</h3>
+          <ul id="team-blue-list"></ul>
+          <button class="btn btn-blue" onclick="chooseTeam('blue')" id="btn-join-blue">Entrar no Azul</button>
+        </div>
+        <div class="team-box team-red">
+          <h3>🔴 TIME VERMELHO</h3>
+          <ul id="team-red-list"></ul>
+          <button class="btn btn-red" onclick="chooseTeam('red')" id="btn-join-red">Entrar no Vermelho</button>
+        </div>
+      </div>
+      <div class="spectators-box">
+        <h4>👁️ Espectadores</h4>
+        <ul id="spectators-list"></ul>
+      </div>
+      <button class="btn btn-rules" onclick="showRules()">📜 Regras</button>
+    </div>
+  </div>
+
+  <!-- TELA DO JOGO -->
+  <div id="game-screen" class="screen">
+    <div class="game-header" id="game-header">
+      <div class="header-left">
+        <span id="timer-display">⏱️ 20:00</span>
+      </div>
+      <div class="header-center">
+        <span id="turn-indicator">Vez de: —</span>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-small" onclick="showRules()">📜</button>
+        <button class="btn btn-small" onclick="toggleShipList()">🚢</button>
+      </div>
+    </div>
+
+    <div class="queue-bar" id="queue-bar"></div>
+
+    <div class="boards-container">
+      <div class="board-section">
+        <h3>🎯 CAMPO INIMIGO <span id="enemy-team-name"></span></h3>
+        <div class="board-wrapper" id="enemy-wrapper">
+          <div class="board" id="enemy-board"></div>
+        </div>
+      </div>
+      <div class="board-section">
+        <h3>🛡️ CAMPO ALIADO <span id="ally-team-name"></span></h3>
+        <div class="board-wrapper" id="ally-wrapper">
+          <div class="board" id="ally-board"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Painel de ação -->
+    <div class="action-panel" id="action-panel" style="display:none">
+      <div id="ask-move-panel">
+        <p>Quer mover suas embarcações?</p>
+        <button class="btn btn-primary" onclick="wantMove(true)">✅ Sim, mover</button>
+        <button class="btn btn-secondary" onclick="wantMove(false)">❌ Não, atirar</button>
+      </div>
+      <div id="move-panel" style="display:none">
+        <p>Movimentos restantes: <span id="moves-left">2</span></p>
+        <p class="hint">Toque num navio seu e depois numa direção</p>
+        <div class="move-controls">
+          <button class="btn btn-dir" onclick="moveSelected('up')">⬆️</button>
+          <div>
+            <button class="btn btn-dir" onclick="moveSelected('left')">⬅️</button>
+            <button class="btn btn-dir" onclick="moveSelected('right')">➡️</button>
+          </div>
+          <button class="btn btn-dir" onclick="moveSelected('down')">⬇️</button>
+        </div>
+        <button class="btn btn-secondary" onclick="skipMove()">Pular movimentação ➡️</button>
+      </div>
+      <div id="shoot-panel" style="display:none">
+        <p>Disparos restantes: <span id="shots-left">3</span></p>
+        <p class="hint">Toque no campo inimigo para atirar</p>
+        <button class="btn btn-secondary" onclick="skipShoot()">Pular disparos ➡️</button>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-panel" id="log-panel"></div>
+
+    <!-- Lista de navios -->
+    <div class="ship-list-modal" id="ship-list-modal" style="display:none">
+      <div class="modal-content">
+        <h3>🚢 Navios Inimigos</h3>
+        <div id="enemy-ships-list"></div>
+        <button class="btn btn-secondary" onclick="toggleShipList()">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TELA DE FIM -->
+  <div id="end-screen" class="screen">
+    <div class="end-box">
+      <h1 id="end-title">🏆 FIM DE JOGO</h1>
+      <div id="end-winner"></div>
+      <h3>Ranking dos Comandantes</h3>
+      <div id="ranking-list"></div>
+      <button class="btn btn-primary" onclick="location.reload()">🔄 Jogar Novamente</button>
+    </div>
+  </div>
+
+  <!-- Modal de regras -->
+  <div class="rules-modal" id="rules-modal" style="display:none">
+    <div class="modal-content rules-content">
+      <h2>📜 Regras do Jogo</h2>
+      <pre id="rules-text"></pre>
+      <button class="btn btn-secondary" onclick="hideRules()">Fechar</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>
