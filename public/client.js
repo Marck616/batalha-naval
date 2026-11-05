@@ -98,6 +98,11 @@ function buildShipSVG(ship) {
   svg.setAttribute('viewBox', vertical ? `0 0 10 ${length * 10}` : `0 0 ${length * 10} 10`);
   svg.setAttribute('preserveAspectRatio', 'none');
   svg.setAttribute('class', `ship-svg${ship.destroyed ? ' destroyed' : ''}`);
+  if (ship.ownerColor) {
+    svg.style.filter = ship.destroyed
+      ? `sepia(.65) brightness(.58) saturate(.55) drop-shadow(0 0 1.5px ${ship.ownerColor}) drop-shadow(0 0 1px ${ship.ownerColor})`
+      : `drop-shadow(0 0 1px ${ship.ownerColor}) drop-shadow(0 0 1px ${ship.ownerColor})`;
+  }
   svg.style.left = `${padding + ship.x * step}px`;
   svg.style.top = `${padding + ship.y * step}px`;
   svg.style.width = `${vertical ? cellSize : shipWidth}px`;
@@ -129,7 +134,14 @@ function goToStep2() {
     return;
   }
   
-  playerColor = document.getElementById('player-color').value;
+  playerColor = document.getElementById('player-color').value.toLowerCase();
+  const usedColors = new Set((myState?.players || [])
+    .filter(player => player.connected !== false)
+    .map(player => String(player.color || '').toLowerCase()));
+  if (usedColors.has(playerColor)) {
+    showToast('Essa cor já foi escolhida por outro jogador!');
+    return;
+  }
   showStep(2);
 }
 
@@ -137,12 +149,14 @@ function chooseMode(spectator) {
   if (spectator) {
     // Espectador: entra e vai para sala de espera
     socket.emit('join', { name: playerName, color: playerColor, spectator: true });
-    showStep(4);
   } else {
     socket.emit('join', { name: playerName, color: playerColor, spectator: false });
-    showStep(4);
   }
 }
+
+socket.on('join_ok', () => {
+  showStep(4);
+});
 
 function chooseTeam(team) {
   socket.emit('choose_team', { team });
@@ -293,7 +307,11 @@ function renderBoard(boardData, containerId, isEnemy, canShoot) {
     ? ships.filter(ship => ship.destroyed)
     : ships;
   shipsToDraw.forEach(ship => {
-    const svg = buildShipSVG(ship);
+    const owner = (myState?.players || []).find(player => player.id === ship.owner);
+    const svg = buildShipSVG({
+      ...ship,
+      ownerColor: isEnemy ? null : owner?.color
+    });
     if (svg) container.appendChild(svg);
   });
 

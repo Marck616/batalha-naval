@@ -46,6 +46,8 @@ let gameState = {
   timeLeft: 0,
   hitBoost: {},             // socketId -> true se pode passar na frente
   hitBoostUsed: {},         // socketId -> true se já usou o boost
+  teamQueues: { blue: [], red: [] },
+  priorityTeamTurns: {},
   log: [],
   winner: null,
   stats: {},                // socketId -> { shipsSunk: 0, partsHit: 0 }
@@ -218,7 +220,7 @@ function getClientView(socketId) {
     players: Object.values(gameState.players).map(p => ({
       id: p.id, name: p.name, team: p.team, color: p.color,
       spectator: p.spectator, alive: p.alive,
-      isAdmin: p.id === gameState.adminId
+      isAdmin: p.id === gameState.adminId, connected: p.connected !== false
     })),
     teams: {
       blue: gameState.teams.blue.map(id => gameState.players[id]?.name),
@@ -269,7 +271,8 @@ function getClientView(socketId) {
       cols: gameState.boardSize.cols,
       rows: gameState.boardSize.rows,
       ships: isSpec ? [] : allyBoard.ships.map(s => ({
-        id: s.id, type: s.type, owner: gameState.players[s.owner]?.name,
+        id: s.id, type: s.type, owner: s.owner,
+        ownerName: gameState.players[s.owner]?.name,
         cells: s.cells, hits: Array.from(s.hits), destroyed: s.destroyed,
         orientation: s.orientation, size: SHIP_TYPES[s.type].size
       })),
@@ -296,13 +299,24 @@ function broadcast() {
 function buildQueue() {
   const blue = gameState.teams.blue.filter(id => gameState.players[id]?.alive);
   const red = gameState.teams.red.filter(id => gameState.players[id]?.alive);
+
+  for (const team of ['blue', 'red']) {
+    const players = team === 'blue' ? blue : red;
+    const oldQueue = gameState.teamQueues[team];
+    gameState.teamQueues[team] = [
+      ...oldQueue.filter(id => players.includes(id)),
+      ...players.filter(id => !oldQueue.includes(id))
+    ];
+  }
+
   const queue = [];
   const max = Math.max(blue.length, red.length);
   for (let i = 0; i < max; i++) {
-    if (blue[i]) queue.push(blue[i]);
-    if (red[i]) queue.push(red[i]);
+    if (blue.length > 0) queue.push(gameState.teamQueues.blue[i % blue.length]);
+    if (red.length > 0) queue.push(gameState.teamQueues.red[i % red.length]);
   }
   gameState.turnQueue = queue;
+  gameState.currentTurnIndex = 0;
 }
 
 function nextTurn() {
@@ -325,8 +339,17 @@ function nextTurn() {
     return;
   }
 
-  gameState.currentTurnIndex = (gameState.currentTurnIndex + 1) % gameState.turnQueue.length;
-  const pid = gameState.turnQueue[gameState.currentTurnIndex];
+  if (gameState.currentPlayer) {
+    const previous = gameState.players[gameState.currentPlayer];
+    if (previous) advanceHitPriorityCycle(previous.team);
+    const oldIndex = gameState.turnQueue.indexOf(gameState.currentPlayer);
+    if (oldIndex !== -1) gameState.turnQueue.splice(oldIndex, 1);
+  }
+
+  if (gameState.turnQueue.length === 0) buildQueue();
+
+  const pid = gameState.turnQueue[0];
+  gameState.currentTurnIndex = 0;
   gameState.currentPlayer = pid;
   gameState.turnPhase = 'ask_move';
   gameState.movesLeft = 0;
@@ -339,13 +362,49 @@ function nextTurn() {
   // 20 segundos para começar a agir
   gameState.turnTimer = setTimeout(() => {
     addLog(`${p.name} não agiu e foi para o fim da fila.`);
-    // manda para o fim da fila
     gameState.turnQueue = gameState.turnQueue.filter(id => id !== pid);
-    gameState.turnQueue.push(pid);
+    if (gameState.players[pid]?.alive) gameState.turnQueue.push(pid);
     nextTurn();
   }, 20000);
 
   broadcast();
+}
+
+function redistributeShips(ownerId, team) {
+  const board = gameState.boards[team];
+  if (!board) return 0;
+
+  const recipients = gameState.teams[team].filter(id =>
+    id !== ownerId &&
+    gameState.players[id]?.alive &&
+    !gameState.players[id]?.spectator
+  );
+  const ships = board.ships.filter(ship => ship.owner === ownerId);
+  if (recipients.length === 0 || ships.length === 0) return ships.length;
+
+  ships.forEach((ship, index) => {
+    const counts = recipients.map(id => ({
+      id,
+      count: board.ships.filter(candidate => candidate.owner === id).length
+    }));
+    counts.sort((a, b) => a.count - b.count || recipients.indexOf(a.id) - recipients.indexOf(b.id));
+    ship.owner = counts[index % counts.length].id;
+  });
+
+  return ships.length;
+}
+
+function advanceHitPriorityCycle(team) {
+  const players = gameState.teams[team].filter(id => gameState.players[id]?.alive);
+  for (const playerId of players) {
+    if (!gameState.hitBoostUsed[playerId]) continue;
+    gameState.priorityTeamTurns[playerId] = (gameState.priorityTeamTurns[playerId] || 0) + 1;
+    if (gameState.priorityTeamTurns[playerId] >= players.length) {
+      gameState.hitBoostUsed[playerId] = false;
+      gameState.priorityTeamTurns[playerId] = 0;
+      delete gameState.hitBoost[playerId];
+    }
+  }
 }
 
 function startTurnAction() {
@@ -370,25 +429,21 @@ function applyHitBoost(hitPlayerId) {
   if (!gameState.hitBoostUsed[hitPlayerId] && gameState.players[hitPlayerId]?.alive) {
     gameState.hitBoost[hitPlayerId] = true;
     gameState.hitBoostUsed[hitPlayerId] = true;
+    gameState.priorityTeamTurns[hitPlayerId] = 0;
     // remove da posição atual e coloca na frente do próximo do mesmo time
     const team = gameState.players[hitPlayerId].team;
     const queue = gameState.turnQueue;
     const idx = queue.indexOf(hitPlayerId);
-    if (idx !== -1) {
-      queue.splice(idx, 1);
-      // encontra o próximo da fila do mesmo time depois da posição atual
-      const currentIdx = queue.indexOf(gameState.currentPlayer);
-      let insertIdx = currentIdx + 1;
-      for (let i = currentIdx + 1; i < queue.length; i++) {
-        if (gameState.players[queue[i]]?.team === team) {
-          insertIdx = i;
-          break;
-        }
-        insertIdx = i + 1;
-      }
-      queue.splice(insertIdx, 0, hitPlayerId);
-      addLog(`${gameState.players[hitPlayerId].name} passou na frente da fila para se defender!`);
-    }
+    if (idx !== -1) queue.splice(idx, 1);
+
+    const currentIdx = queue.indexOf(gameState.currentPlayer);
+    queue.splice(currentIdx + 1, 0, hitPlayerId);
+
+    const teamQueue = gameState.teamQueues[team];
+    const teamIdx = teamQueue.indexOf(hitPlayerId);
+    if (teamIdx !== -1) teamQueue.splice(teamIdx, 1);
+    teamQueue.unshift(hitPlayerId);
+    addLog(`${gameState.players[hitPlayerId].name} passou na frente da fila para se defender!`);
   }
 }
 
@@ -576,16 +631,30 @@ io.on('connection', (socket) => {
 
   socket.on('join', ({ name, color, spectator }) => {
     if (gameState.players[pid]) return;
+
+    const normalizeColor = value => String(value || '').trim().toLowerCase();
+    const selectedColor = normalizeColor(color);
+    const colorInUse = Object.values(gameState.players).some(player =>
+      player.connected !== false && normalizeColor(player.color) === selectedColor
+    );
+    if (!/^#[0-9a-f]{6}$/i.test(selectedColor) || colorInUse) {
+      socket.emit('error_msg', colorInUse
+        ? 'Essa cor já foi escolhida por outro jogador.'
+        : 'Escolha uma cor válida.');
+      return;
+    }
+
     const isAdmin = !gameState.adminId;
     if (isAdmin) gameState.adminId = pid;
 
     gameState.players[pid] = {
       id: pid,
       name: name || `Jogador ${Object.keys(gameState.players).length + 1}`,
-      color: color || '#4a9eff',
+      color: selectedColor,
       team: null,
       spectator: !!spectator,
-      alive: true
+      alive: true,
+      connected: true
     };
 
     if (spectator) {
@@ -598,6 +667,7 @@ io.on('connection', (socket) => {
       gameState.players[pid].team = team;
       gameState.teams[team].push(pid);
     }
+    socket.emit('join_ok');
 
     if (!gameState.stats[pid]) gameState.stats[pid] = { shipsSunk: 0, partsHit: 0, partialHits: {} };
 
@@ -774,26 +844,30 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const p = getPlayer(pid);
     if (!p) return;
-    addLog(`${p.name} saiu. Navios removidos.`);
-    // remove navios do jogador
-    if (p.team && gameState.boards[p.team]) {
-      gameState.boards[p.team].ships = gameState.boards[p.team].ships.filter(s => s.owner !== pid);
-    }
+    const redistributed = redistributeShips(pid, p.team);
+    addLog(redistributed > 0
+      ? `${p.name} saiu. ${redistributed} navios foram divididos entre os companheiros.`
+      : `${p.name} saiu.`);
     // remove de times e fila
     gameState.teams.blue = gameState.teams.blue.filter(id => id !== pid);
     gameState.teams.red = gameState.teams.red.filter(id => id !== pid);
     gameState.turnQueue = gameState.turnQueue.filter(id => id !== pid);
     gameState.spectators = gameState.spectators.filter(id => id !== pid);
-    delete gameState.players[pid];
+    p.connected = false;
+    p.alive = false;
 
     // se o ADM saiu, transfere
     if (gameState.adminId === pid) {
-      const remaining = Object.keys(gameState.players);
+      const remaining = Object.keys(gameState.players).filter(id =>
+        gameState.players[id].connected !== false
+      );
       gameState.adminId = remaining[0] || null;
     }
 
     // se não há mais jogadores, encerra
-    const remainingPlayers = Object.values(gameState.players).filter(pl => !pl.spectator);
+    const remainingPlayers = Object.values(gameState.players).filter(pl =>
+      !pl.spectator && pl.connected !== false
+    );
     if (remainingPlayers.length === 0) {
       clearTimeout(gameState.turnTimer);
       clearInterval(gameState.gameTimer);
