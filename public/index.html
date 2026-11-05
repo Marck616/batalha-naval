@@ -7,31 +7,55 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- TELA DE ENTRADA -->
-  <div id="join-screen" class="screen active">
-    <div class="join-box">
+
+  <!-- ETAPA 1: NOME E COR -->
+  <div id="step-1" class="step active">
+    <div class="step-content">
       <h1>⚓ BATALHA NAVAL</h1>
       <h2>Batalha em Times</h2>
+      <p class="step-indicator">Etapa 1 de 3</p>
+      
       <input type="text" id="player-name" placeholder="Seu nome" maxlength="20">
       <div class="color-picker">
         <label>Cor do avatar:</label>
         <input type="color" id="player-color" value="#4a9eff">
       </div>
-      <div class="join-buttons">
-        <button class="btn btn-primary" onclick="joinGame(false)">🎮 Jogar</button>
-        <button class="btn btn-secondary" onclick="joinGame(true)">👁️ Espectar</button>
-      </div>
+      <button class="btn btn-primary btn-big" onclick="goToStep2()">Continuar ➡️</button>
     </div>
   </div>
 
-  <!-- LOBBY -->
-  <div id="lobby-screen" class="screen">
-    <div class="lobby-container">
-      <h1>⚓ BATALHA NAVAL</h1>
+  <!-- ETAPA 2: JOGAR OU ESPECTAR -->
+  <div id="step-2" class="step">
+    <div class="step-content">
+      <h1>🎮 Como quer participar?</h1>
+      <p class="step-indicator">Etapa 2 de 3</p>
+      
+      <div class="choice-cards">
+        <div class="choice-card" onclick="chooseMode(false)">
+          <span class="choice-icon">🎮</span>
+          <h3>Jogar</h3>
+          <p>Entrar na batalha</p>
+        </div>
+        <div class="choice-card" onclick="chooseMode(true)">
+          <span class="choice-icon">👁️</span>
+          <h3>Espectar</h3>
+          <p>Assistir a partida</p>
+        </div>
+      </div>
+      <button class="btn btn-secondary" onclick="goBack(1)">⬅️ Voltar</button>
+    </div>
+  </div>
+
+  <!-- SALA DE ESPERA: ESCOLHA E VISUALIZACAO DOS TIMES -->
+  <div id="step-4" class="step">
+    <div class="step-content">
+      <h1>⏳ Sala de Espera</h1>
+      <p class="waiting-text">Aguardando o ADM iniciar a partida...</p>
+      
       <div id="admin-panel" class="admin-panel" style="display:none">
         <h3>⚙️ Configurações (ADM)</h3>
         <div class="config-row">
-          <label>Distribuição dos times:</label>
+          <label>Distribuição:</label>
           <select id="cfg-random" onchange="adminConfig()">
             <option value="false">Jogadores escolhem</option>
             <option value="true">Aleatória</option>
@@ -52,26 +76,28 @@
 
       <div class="teams-display">
         <div class="team-box team-blue">
-          <h3>🔵 TIME AZUL</h3>
+          <h3>🔵 AZUL</h3>
           <ul id="team-blue-list"></ul>
-          <button class="btn btn-blue" onclick="chooseTeam('blue')" id="btn-join-blue">Entrar no Azul</button>
+          <button id="join-blue-button" class="btn btn-blue btn-big" onclick="chooseTeam('blue')">Entrar no Azul</button>
         </div>
         <div class="team-box team-red">
-          <h3>🔴 TIME VERMELHO</h3>
+          <h3>🔴 VERMELHO</h3>
           <ul id="team-red-list"></ul>
-          <button class="btn btn-red" onclick="chooseTeam('red')" id="btn-join-red">Entrar no Vermelho</button>
+          <button id="join-red-button" class="btn btn-red btn-big" onclick="chooseTeam('red')">Entrar no Vermelho</button>
         </div>
       </div>
+
       <div class="spectators-box">
         <h4>👁️ Espectadores</h4>
         <ul id="spectators-list"></ul>
       </div>
-      <button class="btn btn-rules" onclick="showRules()">📜 Regras</button>
+      
+      <button class="btn btn-rules" onclick="showRules()">📜 Ver Regras</button>
     </div>
   </div>
 
-  <!-- TELA DO JOGO -->
-  <div id="game-screen" class="screen">
+  <!-- TELA DO JOGO (só aparece quando começa) -->
+  <div id="game-screen" class="step">
     <div class="game-header" id="game-header">
       <div class="header-left">
         <span id="timer-display">⏱️ 20:00</span>
@@ -102,8 +128,8 @@
       </div>
     </div>
 
-    <!-- Painel de ação -->
     <div class="action-panel" id="action-panel" style="display:none">
+      <div class="panel-drag-handle" title="Arraste para mover este painel">Mover painel ↔</div>
       <div id="ask-move-panel">
         <p>Quer mover suas embarcações?</p>
         <button class="btn btn-primary" onclick="wantMove(true)">✅ Sim, mover</button>
@@ -129,10 +155,8 @@
       </div>
     </div>
 
-    <!-- Log -->
     <div class="log-panel" id="log-panel"></div>
 
-    <!-- Lista de navios -->
     <div class="ship-list-modal" id="ship-list-modal" style="display:none">
       <div class="modal-content">
         <h3>🚢 Navios Inimigos</h3>
@@ -143,9 +167,9 @@
   </div>
 
   <!-- TELA DE FIM -->
-  <div id="end-screen" class="screen">
+  <div id="end-screen" class="step">
     <div class="end-box">
-      <h1 id="end-title">🏆 FIM DE JOGO</h1>
+      <h1>🏆 FIM DE JOGO</h1>
       <div id="end-winner"></div>
       <h3>Ranking dos Comandantes</h3>
       <div id="ranking-list"></div>

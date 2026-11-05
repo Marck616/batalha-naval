@@ -255,7 +255,8 @@ function getClientView(socketId) {
         return { x, y, result: val.result, playerName: gameState.players[val.playerId]?.name || '?' };
       }),
       ships: isSpec ? [] : enemyBoard.ships.filter(s => s.destroyed).map(s => ({
-        type: s.type, size: SHIP_TYPES[s.type].size, owner: gameState.players[s.owner]?.name
+        type: s.type, size: SHIP_TYPES[s.type].size, owner: gameState.players[s.owner]?.name,
+        cells: s.cells, orientation: s.orientation, destroyed: true
       })),
       aliveShips: isSpec ? [] : enemyBoard.ships.filter(s => !s.destroyed).map(s => ({
         type: s.type, size: SHIP_TYPES[s.type].size
